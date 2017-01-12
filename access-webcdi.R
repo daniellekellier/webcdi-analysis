@@ -6,7 +6,7 @@ connect_to_webcdi <- function(mode = "remote") {
                     remote = "52.32.108.131")
   
   src <- dplyr::src_postgres(host = address, dbname = "webcdi-admin",
-                          user = "webcdi-admin", password = "first5words")
+                          user = "webcdi-user", password = "1st_web_mcarthur")
   return(src)
 }
 

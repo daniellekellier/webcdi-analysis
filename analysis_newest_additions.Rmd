@@ -26,6 +26,7 @@ library(wordbankr)
 library(langcog)
 library(stringr)
 library(RPostgreSQL)
+library(lubridate)
 theme_set(theme_mikabr(base_size = 18))
 
 source("access-webcdi.R")
@@ -213,7 +214,7 @@ combined_words$word_type[combined_words$category %in% nouns] <- "nouns"
 combined_words$word_type[combined_words$category %in% verbs] <- "verbs"
 
 combined_words$newest <- FALSE
-combined_words$newest[combined_words$study_group == "MTurk-4"] <- TRUE
+combined_words$newest[combined_words$study_group == "MTurk-5"] <- TRUE
 
 prop_measures <- combined_words %>% group_by(id, age, newest) %>% summarise(comprehension = sum(value == "understands" | value == "produces")/n(), production = sum(value == "produces")/n())
 
@@ -306,5 +307,22 @@ type_production_plot <- ggplot(prod_data,
   theme(legend.position = "bottom")
 
 print(type_production_plot)
+```
+
+Can look at the start and end times for studies done 1/11/17 morning PDT time and after.
+
+```{r}
+times <- as.data.frame(matrix(nrow = nrow(admin_info),ncol=2))
+names(times) <- c("start_time","end_time")
+
+times$start_time <- admin_info$created_date
+times$end_time <- admin_info$last_modified
+
+times <- with_tz(times, "UTC") %>% filter(start_time > as.POSIXlt("2017-01-11 09:00:00 PDT"))
+
+times$completion_time <- times$end_time - times$start_time
+times$num_range <- seq(1,nrow(times)*2,2)
+
+ggplot(times, aes(xmin = start_time, xmax = end_time, ymin = num_range, ymax = num_range + 1, fill = factor(num_range))) + geom_rect() + theme(legend.position = "none")
 ```
 
