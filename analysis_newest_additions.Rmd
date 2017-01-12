@@ -32,6 +32,8 @@ theme_set(theme_mikabr(base_size = 18))
 source("access-webcdi.R")
 source("predictQR_fixed.R")
 mode <- "remote"
+compare_newest_studies <- F
+newest_studies <- "MTurk-5"
 
 ```
 
@@ -213,13 +215,17 @@ combined_words$value[is.na(combined_words$value)] <- "neither"
 combined_words$word_type[combined_words$category %in% nouns] <- "nouns"
 combined_words$word_type[combined_words$category %in% verbs] <- "verbs"
 
-combined_words$newest <- FALSE
-combined_words$newest[combined_words$study_group == "MTurk-5"] <- TRUE
-
-prop_measures <- combined_words %>% group_by(id, age, newest) %>% summarise(comprehension = sum(value == "understands" | value == "produces")/n(), production = sum(value == "produces")/n())
-
-prop_measures_old <- prop_measures %>% filter(!newest)
-prop_measures_new <- prop_measures %>% filter(newest)
+if (compare_newest_studies) {
+  combined_words$newest <- FALSE
+  combined_words$newest[combined_words$study_group == newest_studies] <- TRUE
+  
+  prop_measures <- combined_words %>% group_by(id, age, newest) %>% summarise(comprehension = sum(value == "understands" | value == "produces")/n(), production = sum(value == "produces")/n())
+  
+  prop_measures_old <- prop_measures %>% filter(!newest)
+  prop_measures_new <- prop_measures %>% filter(newest)
+} else {
+    prop_measures <- combined_words %>% group_by(id, age) %>% summarise(comprehension = sum(value == "understands" | value == "produces")/n(), production = sum(value == "produces")/n())
+}
 
 ```
 
@@ -232,10 +238,16 @@ combined_comprehension_plot <- ggplot(comp_data,
   facet_wrap(~language) +
   geom_jitter(width = .4, size = 1, alpha = .1) +
   geom_line(data = comp_preds, 
-            aes(y = pred, col = percentile, group = percentile)) + 
-  geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=prop_measures_old, aes(x = age, y = comprehension)) +
-  geom_jitter(width = .6, size = 1, alpha = .6, colour = "red", data=prop_measures_new, aes(x = age, y = comprehension)) +
-  scale_colour_solarized(name="Percentile") +
+            aes(y = pred, col = percentile, group = percentile))
+
+  if (compare_newest_studies) {
+    combined_comprehension_plot <- combined_comprehension_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=prop_measures_old, aes(x = age, y = comprehension)) +
+    geom_jitter(width = .6, size = 1, alpha = .6, colour = "red", data=prop_measures_new, aes(x = age, y = comprehension))
+  } else{
+    combined_comprehension_plot <- combined_comprehension_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures, aes(x = age, y = comprehension))
+  }
+  
+  combined_comprehension_plot <- combined_comprehension_plot + scale_colour_solarized(name="Percentile") +
   scale_x_continuous(breaks = seq(8, 18, 4),
                      limits = c(8, 18),
                      name = "Age (months)") +
@@ -243,7 +255,7 @@ combined_comprehension_plot <- ggplot(comp_data,
   ylim(c(0, 1)) + 
   theme(legend.position = "bottom")
 
-print(combined_comprehension_plot)
+  print(combined_comprehension_plot)
 
 
 combined_production_plot <- ggplot(prod_data,
@@ -251,10 +263,17 @@ combined_production_plot <- ggplot(prod_data,
   facet_wrap(~language) +
   geom_jitter(width = .4, size = 1, alpha = .1) + 
   geom_line(data = prod_preds, 
-            aes(y = pred, col = percentile, group = percentile)) + 
-  geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=prop_measures_old, aes(x = age, y = production)) +
-  geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures_new, aes(x = age, y = production)) +
-  scale_colour_solarized(name="Percentile") +
+            aes(y = pred, col = percentile, group = percentile))
+
+  if (compare_newest_studies) {
+    combined_production_plot <- combined_production_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=prop_measures_old, aes(x = age, y = production)) +
+  geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures_new, aes(x = age, y = production))
+    
+  } else {
+    combined_production_plot <- combined_production_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures, aes(x = age, y = production))
+  }
+
+  combined_production_plot <- combined_production_plot + scale_colour_solarized(name="Percentile") +
   scale_x_continuous(breaks = seq(8, 30, 4),
                      limits = c(8, 30),
                      name = "Age (months)") +
@@ -262,7 +281,7 @@ combined_production_plot <- ggplot(prod_data,
   ylim(c(0, 1)) + 
   theme(legend.position = "bottom")
 
-print(combined_production_plot)
+  print(combined_production_plot)
 
 ```
 
