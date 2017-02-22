@@ -36,8 +36,8 @@ library(feather)
 library(forcats)
 theme_set(theme_mikabr(base_size = 14) + theme(panel.border = element_rect(fill = NA) ))
 
-source("access-webcdi.R")
-source("predictQR_fixed.R")
+source("helpers/access-webcdi.R")
+source("helpers/predictQR_fixed.R")
 
 refresh_data <- F
 mode <- "remote"
@@ -52,10 +52,10 @@ allow_longitudinal <- F
 ```{r}
 
 if (refresh_data) {
-source("gather_data.R")
+source("helpers/gather_data.R")
 }
 
-source("modeling_functions.R")
+source("helpers/modeling_functions.R")
 
 data_list <- c("slim_webcdi_data", "slim_wordbank_data", "prod_data", "prod_preds", "comp_preds")
 
@@ -213,36 +213,30 @@ prop_prod <- both_data %>%
   group_by(age) %>% 
   filter(study_group %in% c("MTurk-3","MTurk-4","MTurk-5", "MTurk-7") | 
            source == "wordbank") %>% 
-  mutate(prop_production = production/n, quantile = NA)
-
+  mutate(prop_production = production/n, quantile = NA)  %>%
+  ungroup()
 
 look_up_percentile <- function(x, perc) {
-  x$quantile <- max(filter(perc, 
+  if (x$production > 0) {
+    x$quantile <- max(filter(perc, 
                            age == x$age, 
                            pred < x$prop_production)$percentile)
+  } else {
+    x$quantile < 0
+  }
   
   return(x)
 }
 
-prop_prod %>%
+prop_prod <-  prop_prod %>%
   split(.$id) %>%
-  map_df(look_up_percentile(., prod_preds_perc))
+  map_df(function(x) look_up_percentile(x, prod_preds_perc))
 
 
-for (i in 1:nrow(prop_prod)) {
-  current_age <- prop_prod$age[i]
-  current_prod <- prop_prod$prop_production[i]
-  
-  ranges_at_age <- prod_preds_perc %>% 
-    filter(age == current_age, pred < current_prod)
-  
-  prop_prod$quantile[i] <- max(max(as.numeric(as.character(ranges_at_age$percentile))),1)
-}
 ```
 
 
 ```{r}
-prop_prod$quantile[prop_prod$production == 0] <- 0
 prop_prod$bin_quantile <- as.character(cut(prop_prod$quantile, 
                                            seq(0,100, 25), 
                                            labels = c("1-25th","26-50th",
@@ -257,6 +251,7 @@ prop_prod_perc <- prop_prod %>%
   summarise(n=n()) %>% 
   group_by(source) %>% 
   mutate(perc=n/sum(n))
+
 ```
 
 ```{r}

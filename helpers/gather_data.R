@@ -21,7 +21,7 @@ min_age <- min(vocab_data$age)
 max_age <- max(vocab_data$age)
 
 
-source("modeling_functions.R")
+source("helpers/modeling_functions.R")
 
 
 
