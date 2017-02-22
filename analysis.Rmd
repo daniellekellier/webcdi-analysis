@@ -23,6 +23,7 @@ knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 Load up necessary packages and scripts for accessing both the Wordbank MySQL database and the Web-CDI database.
 
 ```{r}
+packrat::on()
 library(tidyverse)
 library(quantregGrowth)
 library(wordbankr)
@@ -31,260 +32,50 @@ library(stringr)
 library(RPostgreSQL)
 library(lubridate)
 library(robustbase)
+library(feather)
 library(forcats)
 theme_set(theme_mikabr(base_size = 14) + theme(panel.border = element_rect(fill = NA) ))
 
 source("access-webcdi.R")
 source("predictQR_fixed.R")
+
+refresh_data <- F
 mode <- "remote"
-compare_newest_studies <- F
-newest_studies <- "MTurk-5"
+compare_newest_studies <- T
+newest_studies <- "MTurk-7"
 # taus <- seq(0.01,0.99, 0.01)
 taus <-  c(0.1, 0.25, 0.5, 0.75, 0.9)
-
-
+allow_longitudinal <- F
 
 ```
 
-Word categories classified into nouns and verbs
-```{r}
-nouns <- c("animals", "vehicles","toys","food_drink","clothing","body_parts","furniture_rooms","household","outside","people")
-verbs <- c("action_words","helping_verbs")
-```
-
-
-Collect data from wordbank.
-```{r}
-num_words <- get_item_data() %>%
-  filter(type == "word") %>%
-  group_by(language, form) %>%
-  summarise(n = n())
-
-vocab_data <- get_administration_data() %>%
-  select(data_id, language, form, age, sex, 
-         mom_ed, birth_order, production, comprehension, source_name) %>% 
-  left_join(num_words) %>%
-  mutate(no_production = n - production)
-
-min_age <- min(vocab_data$age)
-max_age <- max(vocab_data$age)
-```
-
-Functions for modelling quantiles for Wordbank data.
 ```{r}
 
-fit_gcrq <- function(x) {
-  mod <- try(gcrq(formula = mean ~ ps(age, monotone = 1, 
-                                      lambda = 1000), 
-                  tau = taus, data = x))
-
-  if(inherits(mod, "try-error"))
-  {
-    return(NA)
-  }
-
-  return(mod)
+if (refresh_data) {
+source("gather_data.R")
 }
 
-pred_gcrq <- function(x, mods) {
-  mod <- mods[[x$language[1]]]
+source("modeling_functions.R")
 
-  if (is.na(mod[1])) {
-    return(expand.grid(age = x$age, 
-                       language = x$language[1], 
-                       percentile = as.character(taus*100), 
-                       pred = NA))
-  } else {
-    preds <- predictQR_fixed(mod, 
-                             newdata = x) %>%
-      data.frame %>%
-      mutate(age = x$age, 
-             language = x$language) %>%
-      gather(percentile, pred, starts_with("X")) %>%
-      mutate(percentile = as.character(as.numeric(str_replace(percentile, 
-                                                              "X", "")) 
-                                       * 100))
-    return(preds)
-  }
-}
+data_list <- c("slim_webcdi_data", "slim_wordbank_data", "prod_data", "prod_preds", "comp_preds")
 
-fit_sex <- function(x) {
-  robustbase::glmrob(cbind(production, no_production) ~ age * sex - sex,
-                     family = "binomial",
-                     data = x)
-}
-
-pred_sex_language <- function(x, model) {
-  x$pred <- predict(model[[x$language[1]]], 
-                    newdata = x, type = "response")
-  return(x)
-}
-
-pred_sex_source <- function(x, model) {
-  x$pred <- predict(model[[x$source[1]]], 
-                    newdata = x, type = "response")
-  return(x)
-}
-
-fit_ses <- function(x) {
-  robustbase::glmrob(cbind(production, no_production) ~ 
-                       age * mom_ed  - mom_ed,
-                     family = "binomial",
-                     data = x)
-}
-
-pred_ses_language <- function(x, model) {
-  x$pred <- predict(model[[x$language[1]]], 
-                    newdata = x, type = "response")
-  return(x)
-}
-
-pred_ses_source <- function(x, model) {
-  x$pred <- predict(model[[x$source[1]]], 
-                    newdata = x, type = "response")
-  return(x)
+for (i in data_list) {
+  temp <- read_feather(paste0("data/",i,".feather"))
+  assign(i, temp)
 }
 
 ```
 
-Grab English WG comprehension data from Wordbank and plot alone with model
-
-```{r}
-comp_data <- vocab_data %>%
-  filter(form == "WG" &  language == "English") %>%
-  mutate(mean = comprehension / n)
-
-comp_models <- comp_data %>%
-  split(.$language) %>%
-  map(fit_gcrq) 
-
-comp_preds <- comp_data %>%
-  group_by(language, age) %>%
-  summarise(n = n()) %>%
-  data.frame() %>%
-  split(.$language) %>%
-  map_df(function(x) pred_gcrq(x, comp_models)) 
-
-wordbank_comprehension_plot <- ggplot(comp_data,
-       aes(x = age, y = mean)) +
-  facet_wrap(~language) +
-  geom_jitter(width = .4, size = 1, alpha = .1) +
-  geom_line(data = comp_preds, 
-            aes(y = pred, col = percentile, group = percentile)) + 
-  scale_colour_solarized(name="Percentile") +
-  scale_x_continuous(breaks = seq(8, 18, 4),
-                     limits = c(8, 18),
-                     name = "Age (months)") +
-  scale_y_continuous(limits = c(0,1), labels = scales::percent) +
-  theme(legend.position = "bottom")
-
-print(wordbank_comprehension_plot)
-
-```
-
-Grab production data from English WG and WS for Wordbank and plot data alone with model
-
-```{r}
-prod_data <- vocab_data %>%
-  filter(language == "English") %>%
-  mutate(mean = production / n)
-
-prod_models <- prod_data %>%
-  split(.$language) %>%
-  map(fit_gcrq) 
-
-prod_preds <- prod_data %>%
-  group_by(language, age) %>%
-  summarise(n = n()) %>%
-  data.frame() %>%
-  split(.$language) %>%
-  map_df(function(x) pred_gcrq(x, prod_models)) 
-
-wordbank_production_plot <- ggplot(prod_data,
-       aes(x = age, y = mean)) +
-  facet_wrap(~language) +
-  geom_jitter(width = .4, size = 1, alpha = .1) +
-  geom_line(data = prod_preds, 
-            aes(y = pred, col = percentile, group = percentile)) + 
-  scale_colour_solarized(name="Percentile") +
-  scale_x_continuous(breaks = seq(8, 36, 4),
-                     limits = c(8, 36),
-                     name = "Age (months)") +
-  ylab("Production Vocabulary\n(proportion of total words)") +
-  scale_y_continuous(limits = c(0,1), labels = scales::percent) +
-  theme(legend.position = "bottom")
-
-print(wordbank_production_plot)
-
-```
-
-Access Web-CDI database and find data from the studies of interest (labeled 'MTurk').
-Grab the related CDI items. There are one set each for the two instruments.
-
+Filter Web-CDI data
 ```{r}
 
-webcdi <- connect_to_webcdi(mode=mode)
-study_info <- get_common_table(webcdi, "researcher_UI_study") %>% as.data.frame() %>% filter(grepl('MTurk', name)) %>% rename(study_id = id, instrument = instrument_id)
-instruments <- unique(study_info$instrument)
-study_items <- list()
-
-for (i in 1:length(instruments)){
-  temp <- get_common_table(webcdi, paste("cdi_forms", tolower(instruments[i]), sep="_")) %>% as.data.frame() %>% rename(item_ID = itemID)
-  study_items[[i]] <- temp
-  study_items[[i]]$instrument <- instruments[i]
-}
-
-cdi_items <- bind_rows(study_items) %>% filter(!grepl('example', item_ID))
-
-```
-
-Grab Web-CDI by-child data (administration details, demographic information, and given answers)
-```{r}
-
-admin_info <- get_common_table(webcdi, "researcher_UI_administration") %>% as.data.frame() %>% filter(study_id %in% study_info$study_id & completed) %>% rename(administration_id = id)
-
-background_info <- get_common_table(webcdi, "cdi_forms_backgroundinfo") %>% as.data.frame() %>% filter(administration_id %in% admin_info$administration_id) %>% filter(birth_weight >= 5.5)
-
-cdi_answers <- get_common_table(webcdi, "researcher_UI_administration_data") %>% as.data.frame() %>% filter(administration_id %in% admin_info$administration_id) %>% select(-id)
-
-```
-
-Merge Web-CDI tables.
-Calculate proportions of words understood and words produced.
-```{r}
-
-combined_data <- left_join(background_info, admin_info, by = "administration_id") %>% left_join(., study_info, by = "study_id") %>% left_join(., cdi_items, by = c("instrument")) %>% left_join(., cdi_answers, by = c("administration_id", "item_ID")) %>% filter( grepl('WG', instrument) & (age >= 8 & age <= 18) | grepl('WS', instrument) & (age >= 16 & age <= 30))
-
-combined_words <- combined_data %>% filter(item_type == "word")
-combined_words$value[is.na(combined_words$value)] <- "neither"
-
-combined_words$word_type[combined_words$category %in% nouns] <- "nouns"
-combined_words$word_type[combined_words$category %in% verbs] <- "verbs"
-
-
-```
-
-Combine wordbank and Web-CDI data into a single dataframe for later facet graphs
-```{r}
-
-slim_wordbank_data <- vocab_data %>% filter(language == "English") %>% rename(id = data_id, study_group = source_name) %>% select(id, form, age, sex, study_group, mom_ed, production, comprehension, n) %>% mutate(source = "wordbank", mom_ed = fct_collapse(mom_ed, 
-                               `Below Secondary` = c("None","Primary",
-                                                     "Some Secondary"),
-                               `Secondary` = c("Secondary", "Some College"),
-                               `College and Above` = c("College", 
-                                                       "Some Graduate", 
-                                                       "Graduate")))
-
-slim_webcdi_data <- combined_words %>% group_by(id, instrument, age, sex, study_group, mother_education) %>% summarise(comprehension = sum(value == "understands" | value == "produces"), production = sum(value == "produces"), n = n(), source = "webcdi", form = NA, mom_ed = NA) %>% rename(sex_old = sex) %>% mutate(sex = ifelse(sex_old == "F", "Female", ifelse(sex_old == "M", "Male", NA))) %>% select (-sex_old)
-
-slim_webcdi_data$form[grepl('WG', slim_webcdi_data$instrument)] <- "WG"
-slim_webcdi_data$form[grepl('WS', slim_webcdi_data$instrument)] <- "WS"
-
-slim_webcdi_data$mom_ed[slim_webcdi_data$mother_education %in% 0:9] <- "Below Secondary"
-slim_webcdi_data$mom_ed[slim_webcdi_data$mother_education %in% 10:15] <- "Secondary"
-slim_webcdi_data$mom_ed[slim_webcdi_data$mother_education %in% 16:25] <- "College and Above"
-
-slim_webcdi_data$instrument <- slim_webcdi_data$mother_education <- NULL
+slim_webcdi_data <- slim_webcdi_data %>% filter(
+  completed &
+  (is.na(english) | english > 0.85) &
+  (analysis | is.na(analysis)) &
+  birth_weight >= 5.5 &
+  ((form == "WG" & (age >= 8 & age <= 18)) | (form == "WS" & (age >= 16 & age <= 30)))
+)
 
 a <- list(slim_webcdi_data, slim_wordbank_data)
 
@@ -292,46 +83,36 @@ for (i in 1:length((a))) {
   temp <- a[[i]]
   temp <- temp[,c("source","id","form","study_group","age","sex","mom_ed","production","comprehension","n")]
   a[[i]] <- temp
+  comp_preds
   
 }
 
-both_data <- bind_rows(a) %>% mutate(no_production = (n-production))
+both_data <- bind_rows(a) %>% mutate(no_production = (n-production)) %>% ungroup()
+levels(both_data$mom_ed)<-c("Below Secondary","Secondary","College and Above")
 
 ```
+
 
 Plot Wordbank data with Web-CDI data (in red) along with the original model lines.
 
 ```{r}
 
-if (compare_newest_studies) {
-  combined_words$newest <- FALSE
-  combined_words$newest[combined_words$study_group == newest_studies] <- TRUE
-  
-  prop_measures <- combined_words %>% group_by(id, age, newest) %>% summarise(comprehension = sum(value == "understands" | value == "produces")/n(), production = sum(value == "produces")/n())
-  
-  prop_measures_old <- prop_measures %>% filter(!newest)
-  prop_measures_new <- prop_measures %>% filter(newest)
-} else {
-    prop_measures <- combined_words %>% group_by(id, age) %>% summarise(comprehension = sum(value == "understands" | value == "produces")/n(), production = sum(value == "produces")/n())
-}
 
-
-combined_comprehension_plot <- ggplot(comp_data,
-       aes(x = age, y = mean)) +
-  facet_wrap(~language) +
+combined_comprehension_plot <- ggplot(both_data %>% filter(source == "wordbank"),
+       aes(x = age, y = (comprehension/n))) +
   geom_jitter(width = .4, size = 1, alpha = .1) +
   geom_line(data = comp_preds, 
             aes(y = pred, col = percentile, group = percentile))
 
   if (compare_newest_studies) {
-    combined_comprehension_plot <- combined_comprehension_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=prop_measures_old, aes(x = age, y = comprehension)) +
-    geom_jitter(width = .6, size = 1, alpha = .6, colour = "red", data=prop_measures_new, aes(x = age, y = comprehension))
+    combined_comprehension_plot <- combined_comprehension_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=both_data %>% filter(source == "webcdi" & study_group != newest_studies), aes(x = age, y = (comprehension/n))) +
+    geom_jitter(width = .6, size = 1, alpha = .6, colour = "red", data=both_data %>% filter(source == "webcdi" & study_group == newest_studies), aes(x = age, y =  (comprehension/n)))
   } else{
-    combined_comprehension_plot <- combined_comprehension_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures, aes(x = age, y = comprehension))
+    combined_comprehension_plot <- combined_comprehension_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=both_data %>% filter(source == "webcdi"), aes(x = age, y = (comprehension/n)))
   }
   
   combined_comprehension_plot <- combined_comprehension_plot + scale_colour_solarized(name="Percentile") +
-  scale_x_continuous(breaks = seq(8, 18, 4),
+  scale_x_continuous(breaks = seq(8, 18, 2),
                      limits = c(8, 18),
                      name = "Age (months)") +
   ylab("Comprehension Vocabulary\n(proportion of total words)") +
@@ -341,19 +122,17 @@ combined_comprehension_plot <- ggplot(comp_data,
   print(combined_comprehension_plot)
 
 
-combined_production_plot <- ggplot(prod_data,
-       aes(x = age, y = mean)) +
-  facet_wrap(~language) +
-  geom_jitter(width = .4, size = 1, alpha = .1) + 
+combined_production_plot <- ggplot(both_data %>% filter(source == "wordbank"),
+       aes(x = age, y = (production/n))) +
+  geom_jitter(width = .4, size = 1, alpha = .1) +
   geom_line(data = prod_preds, 
             aes(y = pred, col = percentile, group = percentile))
 
   if (compare_newest_studies) {
-    combined_production_plot <- combined_production_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=prop_measures_old, aes(x = age, y = production)) +
-  geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures_new, aes(x = age, y = production))
-    
-  } else {
-    combined_production_plot <- combined_production_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=prop_measures, aes(x = age, y = production))
+    combined_production_plot <- combined_production_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "#249D00", data=both_data %>% filter(source == "webcdi" & study_group != newest_studies), aes(x = age, y = (production/n))) +
+    geom_jitter(width = .6, size = 1, alpha = .6, colour = "red", data=both_data %>% filter(source == "webcdi" & study_group == newest_studies), aes(x = age, y =  (production/n)))
+  } else{
+    combined_production_plot <- combined_production_plot + geom_jitter(width = .4, size = 1, alpha = .6, colour = "red", data=both_data %>% filter(source == "webcdi"), aes(x = age, y = (production/n)))
   }
 
   combined_production_plot <- combined_production_plot + scale_colour_solarized(name="Percentile") +
@@ -372,26 +151,53 @@ Binned report of the % of words on the test reported as produced. Not a ranking.
 
 ```{r}
 
-binned_data <- both_data %>% group_by(id, age, form, source) %>% summarise(prop_prod = mean(production/n)) 
+if (compare_newest_studies) {
+  both_data$source[both_data$study_group == newest_studies] <- "webcdi-newest"
+  both_data$source[both_data$study_group != newest_studies & both_data$source == "webcdi"] <- "webcdi-older"
+}
+binned_data <- both_data %>% 
+  group_by(id, age, form, source, study_group) %>% 
+  summarise(prop_prod = mean(production/n))
 
 binned_data$`% of Words Produced`[binned_data$prop_prod < 0.25] <- "0-25%"
 binned_data$`% of Words Produced`[binned_data$prop_prod >= 0.25 & binned_data$prop_prod < 0.50] <- "25-50%"
 binned_data$`% of Words Produced`[binned_data$prop_prod >= 0.50 & binned_data$prop_prod < 0.75] <- "50-75%"
 binned_data$`% of Words Produced`[binned_data$prop_prod >= 0.75] <- "75-100%"
 
-binned_production_comparison_plot <- ggplot(binned_data, aes(age, fill=`% of Words Produced`)) + geom_bar(position = "fill", width=0.9) + scale_y_continuous(labels = scales::percent) + facet_wrap(~source) + labs(y = "Production Vocabulary\n(% of total words)", x="Age (months)", fill = "") + theme(legend.position = "bottom")
-
-print(binned_production_comparison_plot)
-
+ggplot(binned_data, aes(age, fill=`% of Words Produced`)) + 
+  geom_bar(position = "fill", width=0.9) + 
+  scale_y_continuous(labels = scales::percent) + 
+  facet_wrap(~source) + 
+  labs(y = "Production Vocabulary\n(% of total words)",
+       x="Age (months)", fill = "") + 
+  theme(legend.position = "bottom")
 ```
+```{r}
+binned_data_coarse <- both_data %>% 
+  mutate(age = cut(age, seq(7,32,5))) %>%
+  group_by(id, age, form, source, study_group) %>% 
+  summarise(prop_prod = mean(production/n), 
+            pctile = cut(prop_prod, seq(0, 1, .25)))
+
+ggplot(binned_data_coarse, aes(age, fill=pctile)) + 
+  geom_bar(position = "fill") + 
+  scale_y_continuous(labels = scales::percent) + 
+  facet_wrap(~source) + 
+  labs(y = "Production Vocabulary\n(% of total words)",
+       x="Age (months)", fill = "") + 
+  theme(legend.position = "bottom", 
+         axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+```
+
+
 
 Percentile ranking based on original Wordbank production data. Wordbank graph included as a sanity check (each group should be around 25% for Wordbank data)
 
 ```{r}
-
 taus <- seq(0.01,0.99, 0.01)
 
 prod_models_perc <- prod_data %>%
+  mutate(mean = jitter(mean, amount=0, factor = 0.3)) %>%
   split(.$language) %>%
   map(fit_gcrq) 
 
@@ -400,27 +206,50 @@ prod_preds_perc <- prod_data %>%
   summarise(n = n()) %>%
   data.frame() %>%
   split(.$language) %>%
-  map_df(function(x) pred_gcrq(x, prod_models_perc)) 
+  map_df(function(x) pred_gcrq(x, prod_models_perc)) %>%
+  mutate(percentile = as.numeric(percentile))
 
-prop_prod <- both_data  %>% group_by(age) %>% filter(study_group %in% c("MTurk-3","MTurk-4","MTurk-5") | source == "wordbank") %>% mutate(prop_production = production/n, quantile = NA)
+prop_prod <- both_data %>% 
+  group_by(age) %>% 
+  filter(study_group %in% c("MTurk-3","MTurk-4","MTurk-5", "MTurk-7") | 
+           source == "wordbank") %>% 
+  mutate(prop_production = production/n, quantile = NA)
+
+
+look_up_percentile <- function(x, perc) {
+  x$quantile <- max(filter(perc, 
+                           age == x$age, 
+                           pred < x$prop_production)$percentile)
+  
+  return(x)
+}
+
+prop_prod %>%
+  split(.$id) %>%
+  map_df(look_up_percentile(., prod_preds_perc))
 
 
 for (i in 1:nrow(prop_prod)) {
   current_age <- prop_prod$age[i]
   current_prod <- prop_prod$prop_production[i]
   
-  ranges_at_age <- prod_preds_perc %>% filter(age == current_age, pred < current_prod)
+  ranges_at_age <- prod_preds_perc %>% 
+    filter(age == current_age, pred < current_prod)
   
   prop_prod$quantile[i] <- max(max(as.numeric(as.character(ranges_at_age$percentile))),1)
-  
-  
 }
+```
 
+
+```{r}
 prop_prod$quantile[prop_prod$production == 0] <- 0
-prop_prod$bin_quantile <- as.character(cut(prop_prod$quantile, seq(0,100, 25), labels = c("1-25th","26-50th","51-75th","76-100th")))
+prop_prod$bin_quantile <- as.character(cut(prop_prod$quantile, 
+                                           seq(0,100, 25), 
+                                           labels = c("1-25th","26-50th",
+                                                      "51-75th","76-100th")))
 prop_prod$bin_quantile[prop_prod$production == 0] <- "Did not produce"
 
-webcdi_prop_prod <- prop_prod %>% filter(source == "webcdi")
+webcdi_prop_prod <- prop_prod %>% filter(grepl('webcdi', source))
 wordbank_prop_prod <- prop_prod %>% filter(source == "wordbank")
 
 prop_prod_perc <- prop_prod %>% 
@@ -428,15 +257,35 @@ prop_prod_perc <- prop_prod %>%
   summarise(n=n()) %>% 
   group_by(source) %>% 
   mutate(perc=n/sum(n))
+```
 
-combined_ranking_overall <- ggplot(prop_prod_perc, aes(x = factor(bin_quantile), y= perc, fill=factor(bin_quantile))) + facet_wrap(~source) + geom_bar(stat="identity")+ scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(x = "", fill="", y="% of Population", title = "Production Percentile Ranking") + theme(legend.position = "bottom", axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```{r}
+ggplot(prop_prod_perc, 
+       aes(x = factor(bin_quantile), y= perc, 
+           fill=factor(bin_quantile))) + 
+  facet_wrap(~source) + 
+  geom_bar(stat="identity") + 
+  scale_y_continuous(breaks = seq(0,1,0.25), 
+                     labels = scales::percent) + 
+  labs(x = "", fill="", y="% of Population", 
+       title = "Production Percentile Ranking") + 
+  theme(legend.position = "bottom", 
+        axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
 
-print(combined_ranking_overall)
 
-combined_ranking_data_age <- ggplot(prop_prod, aes(age, fill=factor(bin_quantile))) + geom_bar(position = "fill", width=0.9) + facet_wrap(~source) + scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(fill = "", y = "% of Population", x = "Age (months)", title = "Production Percentile Ranking by Age") + theme(legend.position = "bottom")
+```{r}
+ggplot(prop_prod, aes(age, fill=factor(bin_quantile))) + 
+  geom_bar(position = "fill", width=0.9) + 
+  facet_wrap(~source) + 
+  scale_y_continuous(breaks = seq(0,1,0.25), 
+                     labels = scales::percent) + 
+  labs(fill = "", y = "% of Population", x = "Age (months)", 
+       title = "Production Percentile Ranking by Age") + 
+  theme(legend.position = "bottom")
+```
 
-print(combined_ranking_data_age)
-
+```{r}
 webcdi_ranking_study_age <- ggplot(webcdi_prop_prod, aes(age, fill=factor(bin_quantile))) + geom_bar(position = "fill", width=0.9) + facet_wrap(~study_group) + scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(title = "Production Percentile Ranking", y = "Proportion of Population", x = "Age (months)", fill="") + theme(legend.position = "bottom")
 
 print(webcdi_ranking_study_age)
@@ -456,7 +305,7 @@ Maternal education differenes in vocab norms
 ses_data <- both_data %>% filter(!is.na(mom_ed))
 
 ses_means <- ses_data %>%
-  group_by(mom_ed, age, source) %>% 
+  group_by(source, mom_ed, age) %>% 
   mutate(mean_production = production/n) %>%
   summarise(median = median(mean_production), n = n())
 
@@ -478,19 +327,20 @@ ses_preds <- expand.grid(source = unique(ses_means$source),
                          age = min(ses_means$age):max(ses_means$age), 
                          mom_ed = unique(ses_means$mom_ed)) %>%
   split(.$source) %>%
-  map_df(pred_ses_source, model = ses_models)
+  map_df(pred_ses_source)
 
 ses_plot <- ggplot(ses_means,
        aes(x = age, y = median, colour = mom_ed, label = mom_ed)) +
   facet_wrap(~source) +
-  geom_point(alpha=.2) +
+  geom_point(aes(size = n), alpha=.2) +
   geom_line(data = ses_preds, aes(y = pred)) + 
   scale_colour_solarized(name="Maternal Education") +
   scale_x_continuous(breaks = seq(min(ses_means$age), 
                                   max(ses_means$age), 4),
                      limits = c(min(ses_means$age), max(ses_means$age)),
                      name = "Age (months)") +
-  labs(title = "Maternal Education Differences\nAcross Data and Age", y = "Median Productive Vocabulary\n(proportion of total words)", colour = "") +
+  labs(title = "Maternal Education Differences\nAcross Data and Age", y = "Median Productive Vocabulary\n(proportion of total words)") +
+  theme(legend.title=element_blank()) +
   ylim(c(0, 1)) + 
   theme(legend.position = "bottom")
 print(ses_plot)
@@ -512,7 +362,7 @@ sex_composition <- ggplot(prop_sex_perc, aes(x = factor(sex), y= perc, fill=fact
 
 print(sex_composition)
 
-sex_means <- sex_data %>% group_by(sex, age, source) %>% summarise(production = median(mean_production))
+sex_means <- sex_data %>% group_by(source, sex, age) %>% summarise(production = median(mean_production))
 
 sex_models <- sex_data %>%
   split(.$source) %>%
@@ -522,7 +372,7 @@ sex_preds <- expand.grid(source = unique(sex_means$source),
                          age = min(sex_means$age):max(sex_means$age), 
                          sex = unique(sex_means$sex)) %>%
   split(.$source) %>%
-  map_df(pred_sex_source, model = sex_models)
+  map_df(pred_sex_source)
 
 sex_plot <- ggplot(sex_means,
        aes(x = age, y = production, colour = sex, label = sex)) +
@@ -534,7 +384,8 @@ sex_plot <- ggplot(sex_means,
                                   max(sex_means$age), 4),
                      limits = c(min(sex_means$age), max(sex_means$age)),
                      name = "Age (months)") +
-  labs(title = "Sex Differences\nAcross Data and Age", y = "Median Productive Vocabulary\n(proportion of total words)", colour = "") +
+  labs(title = "Sex Differences\nAcross Data and Age", y = "Median Productive Vocabulary\n(proportion of total words)") +
+  theme(legend.title=element_blank()) +
   ylim(c(0, 1)) + 
   theme(legend.position = "bottom")
 
@@ -548,7 +399,6 @@ for (i in 1:length(object_names)) {
   if(is.ggplot(get(object_names[i]))) {
     ggsave(plot = get(object_names[i]), filename = paste0("graphs/",object_names[i],".png"), width = 16, height = 9, units = "cm")
   }
-  
 }
 
 ```

@@ -3,10 +3,10 @@ connect_to_webcdi <- function(mode = "remote") {
   assertthat::assert_that(is.element(mode, c("local", "remote")))
   address <- switch(mode,
                     local = "localhost",
-                    remote = "52.32.108.131")
+                    remote = "webcdiadmin.canyiscnpddk.us-west-2.rds.amazonaws.com")
   
   src <- dplyr::src_postgres(host = address, dbname = "webcdi-admin",
-                          user = "webcdi-user", password = "1st_web_mcarthur")
+                          user = "webcdi-user", password = "first5words")
   return(src)
 }
 
