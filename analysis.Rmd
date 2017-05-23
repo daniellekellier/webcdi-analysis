@@ -39,10 +39,10 @@ theme_set(theme_mikabr(base_size = 14) + theme(panel.border = element_rect(fill 
 source("helpers/access-webcdi.R")
 source("helpers/predictQR_fixed.R")
 
-refresh_data <- F
+refresh_data <- T
 mode <- "remote"
 compare_newest_studies <- T
-newest_studies <- "MTurk-7"
+newest_studies <- "Facebook-2"
 # taus <- seq(0.01,0.99, 0.01)
 taus <-  c(0.1, 0.25, 0.5, 0.75, 0.9)
 allow_longitudinal <- F
@@ -77,11 +77,11 @@ slim_webcdi_data <- slim_webcdi_data %>% filter(
   ((form == "WG" & (age >= 8 & age <= 18)) | (form == "WS" & (age >= 16 & age <= 30)))
 )
 
-a <- list(slim_webcdi_data, slim_wordbank_data)
+a <- list(filter(slim_webcdi_data, study_name == 'Facebook-2-WG2'), slim_wordbank_data)
 
 for (i in 1:length((a))) {
   temp <- a[[i]]
-  temp <- temp[,c("source","id","form","study_group","age","sex","mom_ed","production","comprehension","n")]
+  temp <- temp[,c("source","id","form","study_group","study_name","age","sex","mom_ed","production","comprehension","n")]
   a[[i]] <- temp
   comp_preds
   

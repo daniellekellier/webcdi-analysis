@@ -70,7 +70,8 @@ prod_preds <- prod_data %>%
 
 
 webcdi <- connect_to_webcdi(mode=mode)
-study_info <- get_common_table(webcdi, "researcher_UI_study") %>% as.data.frame() %>% filter(grepl('MTurk', name)) %>% rename(study_id = id, instrument = instrument_id)
+user_id <- filter(get_common_table(webcdi, "auth_user") %>% as.data.frame(), username=="langcoglab")$id
+study_info <- get_common_table(webcdi, "researcher_UI_study") %>% as.data.frame() %>% filter(researcher_id == user_id) %>% rename(study_id = id, instrument = instrument_id)
 instruments <- unique(study_info$instrument)
 study_items <- list()
 
@@ -88,6 +89,7 @@ cdi_items <- bind_rows(study_items) %>% filter(!grepl('example', item_ID))
 
 
 admin_info <- get_common_table(webcdi, "researcher_UI_administration") %>% as.data.frame() %>% filter(study_id %in% study_info$study_id ) %>% rename(administration_id = id)
+admin_info$study_name <- study_info[match(admin_info$study_id, study_info$study_id), 2]
 
 background_info <- get_common_table(webcdi, "cdi_forms_backgroundinfo") %>% as.data.frame() %>% filter(administration_id %in% admin_info$administration_id)  %>% mutate(english = (84-(language_days_per_week * language_hours_per_day))/84)
 
@@ -110,15 +112,19 @@ combined_words$value[is.na(combined_words$value)] <- "neither"
 # Combine wordbank and Web-CDI data into a single dataframe for later facet graphs
 
 
-slim_wordbank_data <- vocab_data %>% filter(language == "English") %>% rename(id = data_id, study_group = source_name) %>% select(id, form, age, sex, study_group, mom_ed, production, comprehension, n) %>% mutate(source = "wordbank", mom_ed = fct_collapse(mom_ed, 
-                               `Below Secondary` = c("None","Primary",
-                                                     "Some Secondary"),
-                               `Secondary` = c("Secondary", "Some College"),
-                               `College and Above` = c("College", 
-                                                       "Some Graduate", 
-                                                       "Graduate")))
+slim_wordbank_data <- vocab_data %>% filter(language == "English") %>% rename(id = data_id, study_group = source_name) %>% select(id, form, age, sex, study_group, mom_ed, production, comprehension, n) %>% mutate(source = "wordbank", study_name = "", 
+       mom_ed = fct_collapse(mom_ed, 
+       `Below Secondary` = c("None","Primary",
+                             "Some Secondary"),
+       `Secondary` = c("Secondary", "Some College"),
+       `College and Above` = c("College", 
+                               "Some Graduate", 
+                               "Graduate")))
 
-slim_webcdi_data <- combined_words %>% group_by(id, instrument, age, sex, study_group, mother_education, child_ethnicity, language_days_per_week, language_hours_per_day, annual_income, birth_weight,english, analysis, born_on_due_date, completed) %>% summarise(comprehension = sum(value == "understands" | value == "produces"), production = sum(value == "produces"), n = n(), source = "webcdi", form = NA, mom_ed = NA) %>% rename(sex_old = sex) %>% mutate(sex = ifelse(sex_old == "F", "Female", ifelse(sex_old == "M", "Male", NA)))
+slim_webcdi_data <- combined_words %>% 
+  group_by(id, instrument, age, sex, study_group, mother_education, child_ethnicity, language_days_per_week, language_hours_per_day, annual_income, birth_weight,english, analysis, born_on_due_date, completed, last_modified, created_date, study_name, study_group) %>% 
+  summarise(comprehension = sum(value == "understands" | value == "produces"), production = sum(value == "produces"), n = n(), source = "webcdi", form = NA, mom_ed = NA) %>% 
+  rename(sex_old = sex) %>% mutate(sex = ifelse(sex_old == "F", "Female", ifelse(sex_old == "M", "Male", NA)))
 
 slim_webcdi_data$form[grepl('WG', slim_webcdi_data$instrument)] <- "WG"
 slim_webcdi_data$form[grepl('WS', slim_webcdi_data$instrument)] <- "WS"
