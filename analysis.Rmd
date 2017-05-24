@@ -34,6 +34,10 @@ library(lubridate)
 library(robustbase)
 library(feather)
 library(forcats)
+library(magrittr)
+library(zipcode)
+library(maps)
+library(viridis)
 theme_set(theme_mikabr(base_size = 14) + theme(panel.border = element_rect(fill = NA) ))
 
 source("helpers/access-webcdi.R")
@@ -41,10 +45,12 @@ source("helpers/predictQR_fixed.R")
 
 refresh_data <- T
 mode <- "remote"
+filter_studies <- T
+study_list <- c("Facebook-2-WG", "Facebook-2-WG2", "MTurk-7-WG")
 compare_newest_studies <- T
-newest_studies <- "Facebook-2"
-# taus <- seq(0.01,0.99, 0.01)
-taus <-  c(0.1, 0.25, 0.5, 0.75, 0.9)
+newest_studies <- "Facebook-2-WG"
+taus <- seq(0.01,0.99, 0.01)
+# taus <-  c(0.1, 0.25, 0.5, 0.75, 0.9)
 allow_longitudinal <- F
 
 ```
@@ -52,7 +58,8 @@ allow_longitudinal <- F
 ```{r}
 
 if (refresh_data) {
-source("helpers/gather_data.R")
+  source("helpers/gather_data.R")
+  gather_data(taus)
 }
 
 source("helpers/modeling_functions.R")
@@ -73,11 +80,16 @@ slim_webcdi_data <- slim_webcdi_data %>% filter(
   completed &
   (is.na(english) | english > 0.85) &
   (analysis | is.na(analysis)) &
-  birth_weight >= 5.5 &
+  birth_weight >= 3.5 &
   ((form == "WG" & (age >= 8 & age <= 18)) | (form == "WS" & (age >= 16 & age <= 30)))
 )
 
-a <- list(filter(slim_webcdi_data, study_name == 'Facebook-2-WG2'), slim_wordbank_data)
+if (filter_studies) {
+  slim_webcdi_data %<>%
+    filter(study_name %in% study_list)
+}
+
+a <- list(slim_webcdi_data, slim_wordbank_data)
 
 for (i in 1:length((a))) {
   temp <- a[[i]]
@@ -386,6 +398,35 @@ sex_plot <- ggplot(sex_means,
 
 print(sex_plot)
 ```
+
+
+```{r}
+data(zipcode)
+
+zip_data <- slim_webcdi_data %>%
+  filter(analysis) %>%
+  group_by(study_name, zip_code) %>%
+  summarise(n = n()) %>%
+  mutate(zip_code = substr(zip_code,1,3))
+
+zip_prefix <- zipcode %>%
+  mutate(zip_prefix = substr(zip,1,3)) %>%
+  group_by(zip_prefix) %>%
+  summarise(latitude = mean(latitude, na.rm=T),
+            longitude = mean(longitude, na.rm = T))
+
+zip_data %<>%
+  left_join(zip_prefix, by = c("zip_code" = "zip_prefix"))
+
+us<-map_data('state')
+
+map_plot <- ggplot(zip_data,aes(longitude,latitude)) +
+  geom_polygon(data=us,aes(x=long,y=lat,group=group),color='gray',fill=NA,alpha=.35)+
+  geom_point(aes(size = n, colour = study_name),alpha=.25) +
+  theme_mikabr()+
+  xlim(-125,-65)+ylim(20,50)
+```
+
 
 
 ```{r include=FALSE}

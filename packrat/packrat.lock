@@ -23,12 +23,6 @@ Source: CRAN
 Version: 0.4-1
 Hash: 60a5c75e57aae4a0ce76cb7422939aaf
 
-Package: PKI
-Source: CRAN
-Version: 0.1-3
-Hash: aca3e459c659b6d8266538520f72ba19
-Requires: base64enc
-
 Package: R6
 Source: CRAN
 Version: 2.2.0
@@ -38,17 +32,6 @@ Package: RColorBrewer
 Source: CRAN
 Version: 1.1-2
 Hash: c0d56cd15034f395874c870141870c25
-
-Package: RCurl
-Source: CRAN
-Version: 1.95-4.8
-Hash: 79c7d5a8684e44e0e3426d3093aa7d90
-Requires: bitops
-
-Package: RJSONIO
-Source: CRAN
-Version: 1.3-0
-Hash: fb672e20eb6f3010a3639f855d8ef6de
 
 Package: RMySQL
 Source: CRAN
@@ -159,6 +142,12 @@ Version: 2.2.1
 Hash: 46e5cb78836848aa44655e577433f54b
 Requires: digest, gtable, lazyeval, plyr, reshape2, scales, tibble
 
+Package: gridExtra
+Source: CRAN
+Version: 2.2.1
+Hash: 8f54b57d4b0598ed5b27e0eafe86a670
+Requires: gtable
+
 Package: gtable
 Source: CRAN
 Version: 0.2.0
@@ -233,6 +222,11 @@ Package: magrittr
 Source: CRAN
 Version: 1.5
 Hash: bdc4d48c3135e8f3b399536ddf160df4
+
+Package: maps
+Source: CRAN
+Version: 3.1.1
+Hash: 4a0a1b1764bfe2c41c6fc21790408caf
 
 Package: markdown
 Source: CRAN
@@ -344,17 +338,6 @@ Version: 1.1
 Hash: bd5b942006c3fa1352c07ba765a2c670
 Requires: backports
 
-Package: rsconnect
-Source: CRAN
-Version: 0.7
-Hash: 90add0a55eb94c2576714af9ee30a884
-Requires: PKI, RCurl, RJSONIO, digest, packrat, rstudioapi, yaml
-
-Package: rstudioapi
-Source: CRAN
-Version: 0.6
-Hash: fd256f8bfb9a64cc35f98b0decb1a79f
-
 Package: rvest
 Source: CRAN
 Version: 0.3.2
@@ -404,6 +387,17 @@ Requires: DBI, broom, dplyr, forcats, ggplot2, haven, hms, httr,
     jsonlite, lubridate, magrittr, modelr, purrr, readr, readxl, rvest,
     stringr, tibble, tidyr, xml2
 
+Package: viridis
+Source: CRAN
+Version: 0.4.0
+Hash: 5bdac1bcf74a10a7a96f82191f498ab7
+Requires: ggplot2, gridExtra, viridisLite
+
+Package: viridisLite
+Source: CRAN
+Version: 0.2.0
+Hash: 10f0c25af3dc84eaae10f5854f47efdb
+
 Package: wordbankr
 Source: CRAN
 Version: 0.2.0
@@ -420,3 +414,8 @@ Package: yaml
 Source: CRAN
 Version: 2.1.13
 Hash: 4854ccabebc225e8a7309fb4a74980de
+
+Package: zipcode
+Source: CRAN
+Version: 1.0
+Hash: 3383c002e4cb7e9a7b04f10053ae09dd
