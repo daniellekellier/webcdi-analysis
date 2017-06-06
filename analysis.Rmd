@@ -43,7 +43,7 @@ theme_set(theme_mikabr(base_size = 14) + theme(panel.border = element_rect(fill 
 source("helpers/access-webcdi.R")
 source("helpers/predictQR_fixed.R")
 
-refresh_data <- T
+refresh_data <- F
 mode <- "remote"
 filter_studies <- T
 study_list <- c("Facebook-2-WG", "Facebook-2-WG2", "MTurk-7-WG")
@@ -223,8 +223,6 @@ prod_preds_perc <- prod_data %>%
 
 prop_prod <- both_data %>% 
   group_by(age) %>% 
-  filter(study_group %in% c("MTurk-3","MTurk-4","MTurk-5", "MTurk-7") | 
-           source == "wordbank") %>% 
   mutate(prop_production = production/n, quantile = NA)  %>%
   ungroup()
 
@@ -242,7 +240,7 @@ look_up_percentile <- function(x, perc) {
 
 prop_prod <-  prop_prod %>%
   split(.$id) %>%
-  map_df(function(x) look_up_percentile(x, prod_preds_perc))
+  map_df(function(x) look_up_percentile(x, prod_preds))
 
 
 ```
