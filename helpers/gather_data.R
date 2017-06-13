@@ -34,7 +34,7 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
   comp_models <- comp_data %>%
     mutate(mean = jitter(mean, amount=0, factor = 0.3)) %>%
     split(.$language) %>%
-    map(fit_gcrq) 
+    purrr::map(fit_gcrq) 
   
   comp_preds <- comp_data %>%
     group_by(language, age) %>%
@@ -54,7 +54,7 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
   prod_models <- prod_data %>%
     mutate(mean = jitter(mean, amount=0, factor = 0.3)) %>%
     split(.$language) %>%
-    map(fit_gcrq) 
+    purrr::map(fit_gcrq) 
   
   prod_preds <- prod_data %>%
     group_by(language, age) %>%
@@ -113,7 +113,7 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
   slim_wordbank_data <- vocab_data %>% filter(language == "English") %>% 
     rename(id = data_id, study_group = source_name) %>% 
     select(id, form, age, sex, study_group, mom_ed, production, comprehension, n) %>% 
-    mutate(source = "wordbank", study_name = "", 
+    mutate(source = "wordbank", study_name = "", mother_education = NA,
          mom_ed = fct_collapse(mom_ed, 
          `Below Secondary` = c("None","Primary",
                                "Some Secondary"),
@@ -136,8 +136,9 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
                             (84-min(language_days_per_week * language_hours_per_day,84))/84,1),
            form = ifelse(grepl('WG', instrument), 'WG', ifelse(grepl('WS', instrument), 'WS', NA)),
            mom_ed = fct_collapse(as.character(mother_education), 
-                                 `Below Secondary` = as.character(0:9),
-                                 `Secondary` = as.character(10:15),
+                                 `Decline to Respond` = as.character(0),
+                                 `Below Secondary` = as.character(1:11),
+                                 `Secondary` = as.character(12:15),
                                  `College and Above` = as.character(16:25))) %>% 
     ungroup() %>% 
     select(-language_days_per_week, -language_hours_per_day, -early_or_late, 

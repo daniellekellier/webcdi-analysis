@@ -43,12 +43,12 @@ theme_set(theme_mikabr(base_size = 14) + theme(panel.border = element_rect(fill 
 source("helpers/access-webcdi.R")
 source("helpers/predictQR_fixed.R")
 
-refresh_data <- F
+refresh_data <- T
 mode <- "remote"
 filter_studies <- T
-study_list <- c("Facebook-2-WG", "Facebook-2-WG2", "MTurk-7-WG")
+study_list <- c("Facebook-2-WG", "Facebook-2-WG2", "Facebook-2-WS")
 compare_newest_studies <- T
-newest_studies <- "Facebook-2-WG"
+newest_studies <- "Facebook-2-WG2"
 taus <- seq(0.01,0.99, 0.01)
 # taus <-  c(0.1, 0.25, 0.5, 0.75, 0.9)
 allow_longitudinal <- F
@@ -93,14 +93,13 @@ a <- list(slim_webcdi_data, slim_wordbank_data)
 
 for (i in 1:length((a))) {
   temp <- a[[i]]
-  temp <- temp[,c("source","id","form","study_group","study_name","age","sex","mom_ed","production","comprehension","n")]
+  temp <- temp[,c("source","id","form","study_group","study_name","age","sex","mom_ed","mother_education","production","comprehension","n")]
   a[[i]] <- temp
-  comp_preds
-  
+
 }
 
 both_data <- bind_rows(a) %>% mutate(no_production = (n-production)) %>% ungroup()
-levels(both_data$mom_ed)<-c("Below Secondary","Secondary","College and Above")
+levels(both_data$mom_ed)<-c("Decline to Respond","Below Secondary","Secondary","College and Above")
 
 ```
 
@@ -211,7 +210,7 @@ taus <- seq(0.01,0.99, 0.01)
 prod_models_perc <- prod_data %>%
   mutate(mean = jitter(mean, amount=0, factor = 0.3)) %>%
   split(.$language) %>%
-  map(fit_gcrq) 
+  purrr::map(fit_gcrq) 
 
 prod_preds_perc <- prod_data %>%
   group_by(language, age) %>%
@@ -326,7 +325,7 @@ print(ses_composition)
 
 ses_models <- ses_data %>%
   split(.$source) %>%
-  map(fit_ses) 
+  purrr::map(fit_ses) 
 
 ses_preds <- expand.grid(source = unique(ses_means$source), 
                          age = min(ses_means$age):max(ses_means$age), 
@@ -371,7 +370,7 @@ sex_means <- sex_data %>% group_by(source, sex, age) %>% summarise(production = 
 
 sex_models <- sex_data %>%
   split(.$source) %>%
-  map(fit_sex) 
+  purrr::map(fit_sex) 
 
 sex_preds <- expand.grid(source = unique(sex_means$source), 
                          age = min(sex_means$age):max(sex_means$age), 
