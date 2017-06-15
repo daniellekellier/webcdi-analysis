@@ -56,6 +56,24 @@ allow_longitudinal <- F
 ```
 
 ```{r}
+look_up_percentile <- function(x, perc, measure) {
+  if (x[[measure]] > 0) {
+    x$quantile <- max(filter(perc, 
+                           age == x$age, 
+                           pred < x[[paste0("prop_",measure)]])$percentile)
+  } else {
+    x$quantile < 0
+  }
+  
+  return(x)
+}
+
+# look_up_percentile(x, prod_preds, 'production')
+
+```
+
+
+```{r}
 
 if (refresh_data) {
   source("helpers/gather_data.R")
@@ -64,7 +82,7 @@ if (refresh_data) {
 
 source("helpers/modeling_functions.R")
 
-data_list <- c("slim_webcdi_data", "slim_wordbank_data", "prod_data", "prod_preds", "comp_preds")
+data_list <- c("slim_webcdi_data", "slim_wordbank_data", "prod_data", "comp_data", "prod_preds", "comp_preds")
 
 for (i in data_list) {
   temp <- read_feather(paste0("data/",i,".feather"))
@@ -99,7 +117,7 @@ for (i in 1:length((a))) {
 }
 
 both_data <- bind_rows(a) %>% mutate(no_production = (n-production)) %>% ungroup()
-levels(both_data$mom_ed)<-c("Decline to Respond","Below Secondary","Secondary","College and Above")
+levels(both_data$mom_ed)<-c("Decline to Respond","Below Secondary","High School Grad","Some College","College and Above")
 
 ```
 
@@ -168,12 +186,12 @@ if (compare_newest_studies) {
 }
 binned_data <- both_data %>% 
   group_by(id, age, form, source, study_group) %>% 
-  summarise(prop_prod = mean(production/n))
+  summarise(prod_prop = mean(production/n))
 
-binned_data$`% of Words Produced`[binned_data$prop_prod < 0.25] <- "0-25%"
-binned_data$`% of Words Produced`[binned_data$prop_prod >= 0.25 & binned_data$prop_prod < 0.50] <- "25-50%"
-binned_data$`% of Words Produced`[binned_data$prop_prod >= 0.50 & binned_data$prop_prod < 0.75] <- "50-75%"
-binned_data$`% of Words Produced`[binned_data$prop_prod >= 0.75] <- "75-100%"
+binned_data$`% of Words Produced`[binned_data$prod_prop < 0.25] <- "0-25%"
+binned_data$`% of Words Produced`[binned_data$prod_prop >= 0.25 & binned_data$prod_prop < 0.50] <- "25-50%"
+binned_data$`% of Words Produced`[binned_data$prod_prop >= 0.50 & binned_data$prod_prop < 0.75] <- "50-75%"
+binned_data$`% of Words Produced`[binned_data$prod_prop >= 0.75] <- "75-100%"
 
 ggplot(binned_data, aes(age, fill=`% of Words Produced`)) + 
   geom_bar(position = "fill", width=0.9) + 
@@ -187,8 +205,8 @@ ggplot(binned_data, aes(age, fill=`% of Words Produced`)) +
 binned_data_coarse <- both_data %>% 
   mutate(age = cut(age, seq(7,32,5))) %>%
   group_by(id, age, form, source, study_group) %>% 
-  summarise(prop_prod = mean(production/n), 
-            pctile = cut(prop_prod, seq(0, 1, .25)))
+  summarise(prod_prop = mean(production/n), 
+            pctile = cut(prod_prop, seq(0, 1, .25)))
 
 ggplot(binned_data_coarse, aes(age, fill=pctile)) + 
   geom_bar(position = "fill") + 
@@ -220,42 +238,57 @@ prod_preds_perc <- prod_data %>%
   map_df(function(x) pred_gcrq(x, prod_models_perc)) %>%
   mutate(percentile = as.numeric(percentile))
 
-prop_prod <- both_data %>% 
+prod_prop <- both_data %>% 
   group_by(age) %>% 
   mutate(prop_production = production/n, quantile = NA)  %>%
   ungroup()
 
-look_up_percentile <- function(x, perc) {
-  if (x$production > 0) {
-    x$quantile <- max(filter(perc, 
-                           age == x$age, 
-                           pred < x$prop_production)$percentile)
-  } else {
-    x$quantile < 0
-  }
-  
-  return(x)
-}
-
-prop_prod <-  prop_prod %>%
+prod_prop <-  prod_prop %>%
   split(.$id) %>%
-  map_df(function(x) look_up_percentile(x, prod_preds))
+  map_df(function(x) look_up_percentile(x, prod_preds_perc, production))
 
 
 ```
 
+```{r}
+taus <- seq(0.01,0.99, 0.01)
+
+comp_models_perc <- comp_data %>%
+  mutate(mean = jitter(mean, amount=0, factor = 0.3)) %>%
+  split(.$language) %>%
+  purrr::map(fit_gcrq) 
+
+comp_preds_perc <- comp_data %>%
+  group_by(language, age) %>%
+  summarise(n = n()) %>%
+  data.frame() %>%
+  split(.$language) %>%
+  map_df(function(x) pred_gcrq(x, comp_models_perc)) %>%
+  mutate(percentile = as.numeric(percentile))
+
+comp_prop <- both_data %>% 
+  filter(form == 'WG') %>%
+  group_by(age) %>% 
+  mutate(prop_comprehension = comprehension/n, quantile = NA)  %>%
+  ungroup()
+
+comp_prop <-  comp_prop %>%
+  split(.$id) %>%
+  map_df(function(x) look_up_percentile(x, comp_preds_perc, 'comprehension'))
+```
+
 
 ```{r}
-prop_prod$bin_quantile <- as.character(cut(prop_prod$quantile, 
+prod_prop$bin_quantile <- as.character(cut(prod_prop$quantile, 
                                            seq(0,100, 25), 
                                            labels = c("1-25th","26-50th",
                                                       "51-75th","76-100th")))
-prop_prod$bin_quantile[prop_prod$production == 0] <- "Did not produce"
+prod_prop$bin_quantile[prod_prop$production == 0] <- "Did not produce"
 
-webcdi_prop_prod <- prop_prod %>% filter(grepl('webcdi', source))
-wordbank_prop_prod <- prop_prod %>% filter(source == "wordbank")
+webcdi_prod_prop <- prod_prop %>% filter(grepl('webcdi', source))
+wordbank_prod_prop <- prod_prop %>% filter(source == "wordbank")
 
-prop_prod_perc <- prop_prod %>% 
+prod_prop_perc <- prod_prop %>% 
   group_by(source,bin_quantile) %>% 
   summarise(n=n()) %>% 
   group_by(source) %>% 
@@ -264,7 +297,7 @@ prop_prod_perc <- prop_prod %>%
 ```
 
 ```{r}
-ggplot(prop_prod_perc, 
+ggplot(prod_prop_perc, 
        aes(x = factor(bin_quantile), y= perc, 
            fill=factor(bin_quantile))) + 
   facet_wrap(~source) + 
@@ -279,7 +312,7 @@ ggplot(prop_prod_perc,
 
 
 ```{r}
-ggplot(prop_prod, aes(age, fill=factor(bin_quantile))) + 
+ggplot(prod_prop, aes(age, fill=factor(bin_quantile))) + 
   geom_bar(position = "fill", width=0.9) + 
   facet_wrap(~source) + 
   scale_y_continuous(breaks = seq(0,1,0.25), 
@@ -290,11 +323,11 @@ ggplot(prop_prod, aes(age, fill=factor(bin_quantile))) +
 ```
 
 ```{r}
-webcdi_ranking_study_age <- ggplot(webcdi_prop_prod, aes(age, fill=factor(bin_quantile))) + geom_bar(position = "fill", width=0.9) + facet_wrap(~study_group) + scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(title = "Production Percentile Ranking", y = "Proportion of Population", x = "Age (months)", fill="") + theme(legend.position = "bottom")
+webcdi_ranking_study_age <- ggplot(webcdi_prod_prop, aes(age, fill=factor(bin_quantile))) + geom_bar(position = "fill", width=0.9) + facet_wrap(~study_group) + scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(title = "Production Percentile Ranking", y = "Proportion of Population", x = "Age (months)", fill="") + theme(legend.position = "bottom")
 
 print(webcdi_ranking_study_age)
 
-wordbank_ranking_study_age <- ggplot(wordbank_prop_prod, aes(age, fill=factor(bin_quantile))) + geom_bar(position = "fill", width=0.9) + facet_wrap(~study_group) + scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(title = "Production Percentile Ranking", x="Age (months)", y="Proportion of Population", fill = "") + theme(legend.position = "bottom")
+wordbank_ranking_study_age <- ggplot(wordbank_prod_prop, aes(age, fill=factor(bin_quantile))) + geom_bar(position = "fill", width=0.9) + facet_wrap(~study_group) + scale_y_continuous(breaks = seq(0,1,0.25), labels = scales::percent) + labs(title = "Production Percentile Ranking", x="Age (months)", y="Proportion of Population", fill = "") + theme(legend.position = "bottom")
 
 print(wordbank_ranking_study_age)
 

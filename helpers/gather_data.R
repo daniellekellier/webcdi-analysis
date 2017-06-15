@@ -41,7 +41,8 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
     summarise(n = n()) %>%
     data.frame() %>%
     split(.$language) %>%
-    map_df(function(x) pred_gcrq(x, comp_models)) 
+    map_df(function(x) pred_gcrq(x, comp_models)) %>%
+    mutate(percentile = as.numeric(percentile))
   
   
   # Grab production data from English WG and WS for Wordbank and plot data alone with model
@@ -61,7 +62,8 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
     summarise(n = n()) %>%
     data.frame() %>%
     split(.$language) %>%
-    map_df(function(x) pred_gcrq(x, prod_models)) 
+    map_df(function(x) pred_gcrq(x, prod_models)) %>%
+    mutate(percentile = as.numeric(percentile))
   
   
   # Access Web-CDI database and find data from the studies of interest (labeled 'MTurk').
@@ -138,14 +140,15 @@ gather_data <- function(taus = c(0.1, 0.25, 0.5, 0.75, 0.9)) {
            mom_ed = fct_collapse(as.character(mother_education), 
                                  `Decline to Respond` = as.character(0),
                                  `Below Secondary` = as.character(1:11),
-                                 `Secondary` = as.character(12:15),
+                                 `High School Grad` = as.character(12),
+                                 `Some College` = as.character(13:15),
                                  `College and Above` = as.character(16:25))) %>% 
     ungroup() %>% 
     select(-language_days_per_week, -language_hours_per_day, -early_or_late, 
            -due_date_diff, -instrument)
   
   
-  data_list <- c("slim_webcdi_data", "slim_wordbank_data", "prod_data", "prod_preds", "comp_preds")
+  data_list <- c("slim_webcdi_data", "slim_wordbank_data", "prod_data","comp_data", "prod_preds", "comp_preds")
   
   for (i in data_list){
     write_feather(get(i), paste0("data/",i,".feather"))
